@@ -1024,6 +1024,14 @@ def threshold(
             )
     typer.echo(f"wrote {target}")
     typer.echo("your application reads this file; jeval never sits in the request path.")
+    typer.echo(
+        "compare prediction == when and DecisionRecord.stated_probability >= threshold: "
+        "choice: P(prediction); noul: max(p, 1-p); score: reported confidence."
+    )
+    typer.echo(
+        "use the per-type comparison in the YAML, not a rescaled choice SDK confidence; "
+        "see README for response-field mapping."
+    )
     if by:
         typer.echo("")
         _print_segment_sweep(

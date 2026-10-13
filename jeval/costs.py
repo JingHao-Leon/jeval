@@ -9,7 +9,7 @@ class value of that question it fires on, and three costs:
 
 For one action at one threshold, every *gold*-labeled record of the action's question is scored:
 
-- it ran automatically when ``prediction == when and confidence >= threshold``
+- it ran automatically when ``prediction == when and stated_probability >= threshold``
 - a record that ran costs ``0.0`` when its label equals ``when``, else ``cost_false_accept``
 - a record that did not run costs ``cost_escalate``, plus ``cost_false_reject`` when its label
   equals ``when``
@@ -997,6 +997,13 @@ def write_thresholds_yaml(
             question: intent
             when: refund_request
             threshold: 0.89
+            comparison:
+              field: stated_probability
+              operator: '>='
+              by_question_type:
+                choice: prediction_probability
+                noul: max_p_yes_no
+                score: reported_confidence
             expected_cost_per_case: 12.4
             auto_rate: 0.58
             accuracy_auto: 0.94
@@ -1013,6 +1020,13 @@ def write_thresholds_yaml(
     ``model`` joins the distinct models seen across the results; top-level ``n_records`` is the
     sum over actions, so it double-counts records shared by several actions on purpose: it is the
     volume of evidence behind the file, not a distinct-record census.
+
+    ``comparison`` is an additive type-dispatch contract, not an observed-type inventory: every
+    action compares ``DecisionRecord.stated_probability >= threshold``, gated on ``prediction ==
+    when``. Choice uses P(prediction), normally top-1; noul uses max(P(yes), P(no)); score retains
+    producer-reported confidence, which need not be a probability of correctness. This works for
+    mixed types and variable option counts without guessing a provider's native confidence scale.
+    Existing threshold values and fields are unchanged.
 
     Numbers that were never measured are written as ``null``, not ``NaN``, so the file
     round-trips, diffs cleanly, and cannot be read as a measurement. Action names must be unique
@@ -1036,6 +1050,16 @@ def write_thresholds_yaml(
             "question": result.question,
             "when": result.when,
             "threshold": _number_or_none(result.threshold),
+            "comparison": {
+                "field": "stated_probability",
+                "operator": ">=",
+                # Dispatch by the record's type, not the model name or a guessed option count.
+                "by_question_type": {
+                    "choice": "prediction_probability",
+                    "noul": "max_p_yes_no",
+                    "score": "reported_confidence",
+                },
+            },
             "expected_cost_per_case": _number_or_none(result.expected_cost_per_case),
             "auto_rate": _number_or_none(result.auto_rate),
             "accuracy_auto": _number_or_none(result.accuracy_auto),
