@@ -409,6 +409,57 @@ left over after the top class at random, so these per-class figures describe tha
 a real model. A map that is missing or does not sum to 1 within 0.02 — a top-k map — is set aside
 and counted rather than read as zeros, and a class with fewer than 30 labels is named and not measured.
 
+### Deploy the threshold on the scale it was measured on
+
+`jeval threshold` writes an additive `comparison` mapping under **every action** in
+`thresholds.yaml`. The number, interval, flat region and existing fields keep their meanings:
+
+```yaml
+# Comparison contract (the threshold itself comes from your labeled data).
+comparison:
+  field: stated_probability
+  operator: '>='
+  by_question_type:
+    choice: prediction_probability
+    noul: max_p_yes_no
+    score: reported_confidence
+```
+
+This is a type-dispatch table, not a claim that an action contains all three types. Select the
+entry using the answer's `question_type`; do not infer its scale from the model name or the first
+record. The routing rule is `prediction == when and stated_probability >= threshold`. A `null`
+threshold means no recommendation: do not automate from it.
+
+| Record type | Comparison scale | Response value to compare |
+| --- | --- | --- |
+| `choice` | `prediction_probability` | `probabilities[prediction]`, normally the top-1 probability; for a Jev answer, `answer.probabilities[answer.choice]` |
+| `noul` | `max_p_yes_no` | `max(p, 1 - p)` where `p` is P(yes); for a Jev answer, `p = answer.noul` |
+| `score` | `reported_confidence` | The producer's reported `confidence`, unchanged; not a top-1 probability or a claim of correctness |
+
+For canonical records, compare `record.stated_probability` directly. Choice ingest uses the
+probability of the stored prediction when a distribution is present, even if that prediction is
+not the argmax. Without a distribution, the producer must supply that probability in `confidence`;
+jeval cannot infer a missing probability from an SDK-specific confidence statistic.
+
+**Jev's choice `answer.confidence` is not the exported scale.** Its
+[published confidence formula](https://docs.typesafe.ai/confidence) is
+`(p_max - 1/n) / (1 - 1/n)`. Prefer the selected option's probability. If you must use the SDK
+confidence for a winning choice with a known `n > 1`, transform a probability threshold `t` to
+`(t - 1/n) / (1 - 1/n)` **for that answer's option count**. There is no single native confidence
+threshold when option counts vary; jeval does not guess `n` or export a converted line.
+
+Jev Noul returns a probability, not a separate confidence. Jev Score confidence measures
+probability-weighted distance from the most likely ordered level relative to an even spread, not
+the choice transform. Score ingest deliberately preserves it: a supplied confidence of `0.4`
+stays `0.4` even when a level has probability `0.7`. Score records remain outside binary calibration;
+if you explicitly configure a score cost action, the existing cost sweep uses exact prediction/label
+equality, not MAE or RMSE. Its confidence threshold is not a probability-of-correctness threshold.
+
+Existing YAML consumers can continue reading `threshold`; new consumers should also read
+`comparison`. Legacy files without it still mean the same per-type `stated_probability` rule above;
+regenerate them to make that contract explicit. No stored records or recommended numbers change.
+The CLI prints the same comparison guidance, including when a threshold is withheld.
+
 ### Money is written the way its currency is
 
 Costs are printed in the currency you name with `--currency` (default `USD`) — in the report and in

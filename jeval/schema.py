@@ -61,7 +61,14 @@ class DecisionRecord(BaseModel):
     question_key: str
     question_type: QuestionType
     prediction: str
-    confidence: float = Field(ge=0.0, le=1.0, description="Top-1 probability, normalized.")
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Choice: probability of the stored prediction (normally top-1); "
+            "noul: |P(yes) - 0.5| * 2; score: producer-reported confidence, unchanged."
+        ),
+    )
     probabilities: dict[str, float] | None = None
     label: str | None = None
     label_source: LabelSource | None = None
@@ -130,11 +137,15 @@ class DecisionRecord(BaseModel):
     def stated_probability(self) -> float:
         """How likely the model said its answer is to be right: the scale calibration is about.
 
-        For ``choice`` this is ``confidence``, the top-1 probability. A ``noul`` record stores its
-        confidence as the distance from a coin flip, ``|p - 0.5| * 2``, so a 50/50 answer sits at
+        For ``choice`` this is ``confidence``, the stored prediction's probability (normally
+        top-1). A ``noul`` record stores confidence as the distance from a coin flip,
+        ``|p - 0.5| * 2``, so a 50/50 answer sits at
         zero; the answer it gave is right with probability ``max(p, 1 - p)``, which is
         ``0.5 + confidence / 2``. Every measurement and every threshold reads this value, so a
         yes/no question and a multiple-choice question are judged on the same scale.
+        For ``score`` the producer's reported confidence is returned unchanged; despite this
+        property's historical name, it is not necessarily a probability of correctness, and
+        score records never enter binary calibration.
         """
         if self.question_type == "noul":
             return 0.5 + self.confidence / 2.0
